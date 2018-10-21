@@ -46,15 +46,16 @@ public:
                                 remain = remain / 10;
                             }
                             auto out_stream = utility::stringstream_t();
-                            out_stream << qSize << _XPLATSTR(".") << remain << _XPLATSTR(units[i]);
+                            out_stream << qSize << _XPLATSTR(".") << remain << utility::conversions::to_string_t(units[i]);
                             return out_stream.str();
                             //return wxString::Format(_T("%lld.%lld%s"), qSize,remain, units[i]);
                         }
                         else{
                             i++;
                             auto out_stream = utility::stringstream_t();
-                            out_stream << qSize << _XPLATSTR(".0") << remain << _XPLATSTR(units[i]);
+                            out_stream << qSize << _XPLATSTR(".0") << remain << utility::conversions::to_string_t(units[i]);
                             return out_stream.str();
+							
                             //return wxString::Format(_T("%lld.0%lld%s"), qSize,remain, units[i]);
                         }
                     }
@@ -64,7 +65,7 @@ public:
                     if(remain > 0){
                         i++;
                         auto out_stream = utility::stringstream_t();
-                        out_stream << qSize << _XPLATSTR(".") << remain << _XPLATSTR(units[i]);
+                        out_stream << qSize << _XPLATSTR(".") << remain << utility::conversions::to_string_t(units[i]);
                         return out_stream.str();
                     }
                 }
@@ -74,7 +75,7 @@ public:
             i++;
         }
         auto out_stream = utility::stringstream_t();
-        out_stream << size << _XPLATSTR(units[i]);
+        out_stream << size << utility::conversions::to_string_t(units[i]);
         return out_stream.str();
         //return wxString::Format(_T("%lld%s"), size, units[i]);
     }

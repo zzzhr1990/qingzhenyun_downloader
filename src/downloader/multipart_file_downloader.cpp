@@ -74,15 +74,21 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
                     if(content_length > 10 * 1024 * 1024 * this->thread_count){
                         // alloc file first..
                         boost::filesystem::path p(destination);
-                        auto file_size = boost::filesystem::file_size(destination);
+                        auto file_size = boost::filesystem::is_regular_file(p) ? boost::filesystem::file_size(destination) : -1;
                         if(file_size > content_length || file_size < 1){
                             //alloc file
                             //std::cout << "alloc file" << std::endl;
-                            std::ofstream alloc_file = std::ofstream(destination, std::ios::out | std::ios::binary | std::ios::trunc);
-                            //alloc_file.seekp(content_length);
-                            //alloc_file << 'a';
-                            alloc_file.flush();
-                            alloc_file.close();
+							try {
+								std::ofstream alloc_file = std::ofstream(destination, std::ios::out | std::ios::binary);
+								//alloc_file.seekp(content_length);
+								//alloc_file << 'a';
+								alloc_file.flush();
+								alloc_file.close();
+							}
+							catch (std::exception ex) {
+								std::cout << ex.what() << std::endl;
+								std::cout << ex.what() << std::endl;
+							}
                             //std::cout << "alloc file end" << std::endl;
                             //std::cout << "file size: " << boost::filesystem::file_size(destination) << std::endl;
                         }
@@ -146,7 +152,7 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
 
 
 
-        std::cout << "Range: " << ranges << std::endl;
+        std::cout << "Range: " << utility::conversions::to_utf8string(ranges) << std::endl;
 
         const pplx::task<bool> cx = pplx::create_task([download_task,
                                                        &destination,
@@ -207,12 +213,12 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                         string_stream << "Part: " << i << " need down: " << need_size << " current:" << so_far;
                         string_stream << " progress: " << progress << "%" << " speed: ";
                         string_stream << multipart_file_downloader::format_size(part_detail_info->current_speed) << "/s (" << part_detail_info->current_speed << ")" << std::endl;
-                        std::cout << string_stream.str();
+                        std::cout << utility::conversions::to_utf8string(string_stream.str());
                     });
             msg.headers().add(_XPLATSTR("Range"),_XPLATSTR("bytes=") + ranges);
             client.request(msg,token_source.get_token()).then([&task_url,&msg,&file](http_response response)-> pplx::task<http_response> {
                 if(response.status_code() !=  web::http::status_codes::PartialContent){
-                    std::cout << "Request url:" << task_url << "  return code" << response.status_code() << std::endl;
+                    std::cout << "Request url:" << utility::conversions::to_utf8string(task_url) << "  return code" << response.status_code() << std::endl;
                     //std::cout << "file: " << urlTask->remotePath << " | " << urlTask->hash << std::endl;
                     //TODO: check if part throw exception.
                 }
@@ -287,6 +293,7 @@ bool multipart_file_downloader::dump_current_status(utility::string_t &destinati
         for_dump.serialize(alloc_file);
         alloc_file.close();
     }catch (std::exception &e){
+		std::cout << e.what() << std::endl;
         return false;
     }
 

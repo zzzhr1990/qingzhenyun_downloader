@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-
+SET(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/scripts/buildsystems/vcpkg.cmake")
 SET(PROJECT_NAME "qingzhenyun_downloader")
 project(${PROJECT_NAME})
 set(CMAKE_CXX_STANDARD 17)
