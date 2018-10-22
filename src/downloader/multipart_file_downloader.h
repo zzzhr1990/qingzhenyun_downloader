@@ -16,6 +16,7 @@ struct download_part_info {
     time_t last_download_time;
     time_t start_time;
     utility::size64_t current_speed;
+    bool is_last_block;
 };
 
 struct download_task_info {
@@ -83,6 +84,7 @@ private:
     size_t thread_count = 5;
     bool multipart_down(utility::string_t &task_url,utility::string_t &destination,utility::size64_t &file_size,pplx::cancellation_token_source &token_source);
     bool dump_current_status(utility::string_t &destination,download_task_info *info);
+    bool read_dumped_status(utility::string_t &destination,utility::size64_t &file_size, download_task_info *info);
 };
 
 

@@ -74,20 +74,18 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
                     if(content_length > 10 * 1024 * 1024 * this->thread_count){
                         // alloc file first..
                         boost::filesystem::path p(destination);
-                        auto file_size = boost::filesystem::is_regular_file(p) ? boost::filesystem::file_size(destination) : -1;
+                        auto file_size = boost::filesystem::is_regular_file(p) ? boost::filesystem::file_size(destination) : 0;
                         if(file_size > content_length || file_size < 1){
                             //alloc file
                             //std::cout << "alloc file" << std::endl;
 							try {
 								std::ofstream alloc_file = std::ofstream(destination, std::ios::out | std::ios::binary);
-								//alloc_file.seekp(content_length);
-								//alloc_file << 'a';
-								alloc_file.flush();
 								alloc_file.close();
+
 							}
-							catch (std::exception ex) {
+							catch (std::exception &ex) {
 								std::cout << ex.what() << std::endl;
-								std::cout << ex.what() << std::endl;
+								//std::cout << ex.what() << std::endl;
 							}
                             //std::cout << "alloc file end" << std::endl;
                             //std::cout << "file size: " << boost::filesystem::file_size(destination) << std::endl;
@@ -130,22 +128,43 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
     download_task->download_size = 0;
     download_task->file_size = file_size;
     download_task->part_count = thread_count;
-    download_task->part_info = new std::vector<download_part_info*>(thread_count);
+    download_task->part_info = new std::vector<download_part_info*>();
 
-    for(size_t i = 0;i < thread_count; i++){
-        auto range_start = i * part_length;
-        auto not_last_index = i != thread_count - 1;
-        auto ranges = not_last_index ?
-                utility::conversions::to_string_t(std::to_string(range_start) + '-' + std::to_string((i+1) * part_length - 1))
-                : utility::conversions::to_string_t(std::to_string(range_start) + '-' );
+    auto succ = read_dumped_status(destination,file_size,download_task);
+    if(!succ) {
+        for (size_t i = 0; i < thread_count; i++) {
+            auto range_start = i * part_length;
+            auto not_last_index = i != thread_count - 1;
+            /*
+            auto ranges = not_last_index ?
+                          utility::conversions::to_string_t(
+                                  std::to_string(range_start) + '-' + std::to_string((i + 1) * part_length - 1))
+                                         : utility::conversions::to_string_t(std::to_string(range_start) + '-');
+                                         */
 
-        auto * part_info = new download_part_info();
-        part_info->current_download_size = 0;
-        part_info->current_speed = 0;
-        part_info->part_size = not_last_index ? part_length : part_length + part_rest;
-        part_info->part_start = range_start;
-        //
-        download_task->part_info->at(i) = part_info;
+            auto *part_info = new download_part_info();
+            part_info->current_download_size = 0;
+            part_info->current_speed = 0;
+            part_info->part_size = not_last_index ? part_length : part_length + part_rest;
+            part_info->part_start = range_start;
+            part_info->is_last_block = !not_last_index;
+            //
+            //download_task->part_info->at(i) = part_info;
+            download_task->part_info->push_back(part_info);
+        }
+    } else{
+        std::cout << "CONTINUE" << std::endl;
+    }
+
+    for(size_t i = 0;i < download_task->part_count; i++){
+        auto part = download_task->part_info->at(i);
+        auto range_start = part->part_start;
+        //auto not_last_index = i != thread_count - 1;
+        auto ranges = utility::conversions::to_string_t(std::to_string(range_start) + '-'
+                + (part->is_last_block ? _XPLATSTR("") : std::to_string(part->part_size + range_start - 1)));
+               // : utility::conversions::to_string_t(std::to_string(range_start) + '-' );
+
+
         //download_task->part_info->push_back(part_info);
 
         //tasks.push_back(not_last_index ? part_length : part_length + part_rest);
@@ -161,15 +180,15 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                                                        task_url,
                                                        part_length ,
                                                        part_rest,&token_source]() -> bool {
-            // open file
+            // open file, and share write for all threads.
 #ifdef _WIN32
             int prot = _SH_DENYNO;
 #else
-            int prot = 0; // unsupported on Linux
+            int prot = 0; // unsupported on Linux/Mac
 #endif
             auto file = file_buffer<uint8_t>::open(destination, std::ios::in | std::ios::out | std::ios::binary | std::ios::ate, prot).get();
             file.seekpos(range_start,std::ios::in | std::ios::out | std::ios::binary);
-            // create request..
+            // if we open file after http header received, may be lost data.
             http_client_config config;
             config.set_timeout(std::chrono::seconds(30));
             config.set_chunksize(1024 * 1024 * 4);
@@ -179,8 +198,6 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
             msg.set_response_stream(file);
             msg.set_progress_handler(
                     [&, i](message_direction::direction direction, utility::size64_t so_far) {
-                        //urlTask->processedSize = so_far;
-                        //auto need_size = tasks.at(i);
                         auto * part_detail_info = download_task->part_info->at(i);
                         auto need_size = part_detail_info->part_size;
                         auto ts = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -216,13 +233,14 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                         std::cout << utility::conversions::to_utf8string(string_stream.str());
                     });
             msg.headers().add(_XPLATSTR("Range"),_XPLATSTR("bytes=") + ranges);
-            client.request(msg,token_source.get_token()).then([&task_url,&msg,&file](http_response response)-> pplx::task<http_response> {
+            client.request(msg,token_source.get_token()).then([&task_url,&msg,&file,i](http_response response)-> pplx::task<http_response> {
                 if(response.status_code() !=  web::http::status_codes::PartialContent){
                     std::cout << "Request url:" << utility::conversions::to_utf8string(task_url) << "  return code" << response.status_code() << std::endl;
                     //std::cout << "file: " << urlTask->remotePath << " | " << urlTask->hash << std::endl;
                     //TODO: check if part throw exception.
                 }
 
+                std::cout << "proc:" << i << " recv size" << response.headers().content_length() << std::endl;
                 return response.content_ready();
             }).wait();
 
@@ -246,13 +264,14 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
             this->dump_current_status(destination,download_task);
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        std::cout << "timer closed" << std::endl;
+        //std::cout << "timer closed" << std::endl;
     });
 
     all_task.wait();
     //task_finished = true;
     c_task.wait();
 
+    this->dump_current_status(destination,download_task);
     // do clean
     for(auto *part : * download_task->part_info){
         delete(part);
@@ -270,20 +289,24 @@ bool multipart_file_downloader::dump_current_status(utility::string_t &destinati
         size64_t download_size = 0;
         size64_t download_speed = 0;
         for(auto * part_info_in_system : *info->part_info){
+            //auto ssize = info->part_info->size();
             web::json::value part_info_in_json;
             download_size += part_info_in_system->download_size;
             download_speed += part_info_in_system->current_speed;
             part_info_in_json[_XPLATSTR("part_size")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(part_info_in_system->part_size)));
             part_info_in_json[_XPLATSTR("download_size")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(part_info_in_system->download_size)));
             part_info_in_json[_XPLATSTR("part_start")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(part_info_in_system->part_start)));
+            part_info_in_json[_XPLATSTR("is_last_block")] = web::json::value::boolean(part_info_in_system->is_last_block);
             part_info[index] = part_info_in_json;
             index++;
         }
         web::json::value for_dump;
+        info->download_size = download_size;
         for_dump[_XPLATSTR("download_size")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(info->download_size)));
         for_dump[_XPLATSTR("file_size")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(info->file_size)));
         for_dump[_XPLATSTR("part_count")] = web::json::value::string(utility::conversions::to_string_t(std::to_string(info->part_count)));
         for_dump[_XPLATSTR("part_info")] = part_info;
+
         //for_dump.se
         auto n = web::json::value::number(3);
         //n.as_number().to_uint64()
@@ -298,5 +321,58 @@ bool multipart_file_downloader::dump_current_status(utility::string_t &destinati
     }
 
     return true;
+}
+
+bool multipart_file_downloader::read_dumped_status(utility::string_t &destination,utility::size64_t &file_size, download_task_info *info) {
+    //
+    //
+    try {
+        auto buf_x = file_buffer<uint8_t>::open(destination + _XPLATSTR(".qingzhenyun.part"), std::ios::in | std::ios::binary).get();
+        utility::istringstream_t iss;
+        //concurrency::streams::ostream stream;
+        //uto buf = stream.streambuf();
+        std::string body;
+        body.resize(buf_x.size());
+        buf_x.getn(const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(body.data())), body.size()).get(); // There is no risk of blocking.
+        auto str = conversions::to_string_t(std::move(body));
+        std::cout << "cde :" << str << std::endl;
+        auto json_res =  json::value::parse(str);
+        //std::cout << "write json : " << json_res.serialize() << std::endl;
+        char *end;
+        info->download_size = std::strtoull(utility::conversions::to_utf8string(json_res[_XPLATSTR("download_size")].as_string()).c_str(),&end,10);
+        size_t index = 0;
+        auto arr = json_res[_XPLATSTR("part_info")].as_array();
+        for(auto& part_info_json : arr){
+            auto download_size_json = std::strtoull(utility::conversions::to_utf8string(part_info_json[_XPLATSTR("download_size")].as_string()).c_str(),&end,10);
+            auto part_size_json = std::strtoull(utility::conversions::to_utf8string(part_info_json[_XPLATSTR("part_size")].as_string()).c_str(),&end,10);
+            auto part_start_json = std::strtoull(utility::conversions::to_utf8string(part_info_json[_XPLATSTR("part_start")].as_string()).c_str(),&end,10);
+            if(download_size_json <  part_size_json){
+                auto need_down_size = part_size_json - download_size_json;
+                auto * part_info = new download_part_info();
+                part_info->current_download_size = 0;
+                part_info->current_speed = 0;
+                part_info->part_size = need_down_size;
+                part_info->part_start = download_size_json + part_start_json;
+                part_info->download_size = 0;
+                part_info->is_last_block = part_info_json[_XPLATSTR("is_last_block")].as_bool();
+                info->part_info->push_back(part_info);
+                index++;
+            }
+
+            //
+            // i->part_info->at(i) = part_info;
+        }
+        info->part_count = index;
+        //std :: cout << "Down size " << download_size << std::endl;
+        return true;
+    }catch (std::exception &e){
+        std::cout << e.what() << std::endl;
+        return false;
+    }
+
+    //utility::conversions::to_s
+
+
+    return false;
 }
 
