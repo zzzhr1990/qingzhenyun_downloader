@@ -53,7 +53,8 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
     config.set_chunksize(1024 * 4);
     http_client client(task_url, config);
     http_request msg(mtd);
-    client.request(msg,token_source.get_token()).then([&](http_response response)-> void {
+	pplx::cancellation_token_source main_token_source = token_source.create_linked_source(token_source.get_token());
+    auto main_request = client.request(msg, main_token_source.get_token()).then([&](http_response response)-> void {
         //TODO: process 301/302
         if(response.status_code() == web::http::status_codes::OK){
             /*
@@ -90,7 +91,7 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
                             //std::cout << "alloc file end" << std::endl;
                             //std::cout << "file size: " << boost::filesystem::file_size(destination) << std::endl;
                         }
-
+						main_token_source.cancel();
                         multipart_down(task_url, destination, content_length,token_source);
                     }
             ///    }
@@ -98,9 +99,23 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
         } else{
             std::cout << "we get status: " << response.status_code() << std::endl;
         }
-    }).get();
-
-
+    });
+	try {
+		main_request.get();
+	}
+	catch (web::http::http_exception & http_ex) {
+		if (http_ex.error_code() == std::errc::operation_canceled) {
+			std::cout << "Task cancelled" << std::endl;
+		}
+		else {
+			std::cout << "Unknown http error (" << http_ex.error_code() << ") " << http_ex.what() << std::endl;
+		}
+	}
+	catch (std::exception & canceled) {
+		
+		std::cout << "Unknown error" << canceled.what() << std::endl;
+	}
+	std::cout << "PPLX_MAIN_CANCEL" << std::endl;
     // try to
 
     return true;
@@ -161,7 +176,7 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
         auto range_start = part->part_start;
         //auto not_last_index = i != thread_count - 1;
         auto ranges = utility::conversions::to_string_t(std::to_string(range_start) + '-'
-                + (part->is_last_block ? _XPLATSTR("") : std::to_string(part->part_size + range_start - 1)));
+                + (part->is_last_block ? "" : std::to_string(part->part_size + range_start - 1)));
                // : utility::conversions::to_string_t(std::to_string(range_start) + '-' );
 
 
@@ -171,7 +186,7 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
 
 
 
-        std::cout << "Range: " << utility::conversions::to_utf8string(ranges) << std::endl;
+        //std::cout << "Range: " << utility::conversions::to_utf8string(ranges) << std::endl;
 
         const pplx::task<bool> cx = pplx::create_task([download_task,
                                                        &destination,
@@ -206,7 +221,7 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                         }
                         part_detail_info->download_size = so_far;
                         auto progress = need_size > 0 ? part_detail_info->download_size * 100 / need_size : 0;
-
+						
                         // calc speed
                         auto time_diff = ts - part_detail_info->last_download_time;
                         auto time_interval = 10;
@@ -239,8 +254,8 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                     //std::cout << "file: " << urlTask->remotePath << " | " << urlTask->hash << std::endl;
                     //TODO: check if part throw exception.
                 }
-
-                std::cout << "proc:" << i << " recv size" << response.headers().content_length() << std::endl;
+				//std::errc::operation_canceled
+                //std::cout << "proc:" << i << " recv size" << response.headers().content_length() << std::endl;
                 return response.content_ready();
             }).wait();
 
@@ -332,10 +347,9 @@ bool multipart_file_downloader::read_dumped_status(utility::string_t &destinatio
         //concurrency::streams::ostream stream;
         //uto buf = stream.streambuf();
         std::string body;
-        body.resize(buf_x.size());
+        body.resize(static_cast<size_t>(buf_x.size()));
         buf_x.getn(const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(body.data())), body.size()).get(); // There is no risk of blocking.
         auto str = conversions::to_string_t(std::move(body));
-        std::cout << "cde :" << str << std::endl;
         auto json_res =  json::value::parse(str);
         //std::cout << "write json : " << json_res.serialize() << std::endl;
         char *end;
