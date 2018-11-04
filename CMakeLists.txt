@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-#SET(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+SET(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/scripts/buildsystems/vcpkg.cmake")
 SET(PROJECT_NAME "qingzhenyun_downloader")
 project(${PROJECT_NAME})
 set(CMAKE_CXX_STANDARD 17)
@@ -11,7 +11,7 @@ endif()
 find_package(Boost REQUIRED filesystem system chrono thread random)
 find_package(cpprestsdk CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
-
+find_package(OpenSSL REQUIRED)
 file(GLOB_RECURSE SRCS ${CMAKE_CURRENT_SOURCE_DIR} src/*.cpp src/*.hpp src/*.h src/*.c src/*.xpm)
 add_executable(${PROJECT_NAME} ${SRCS})
 

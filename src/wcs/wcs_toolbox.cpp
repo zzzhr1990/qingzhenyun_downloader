@@ -3,6 +3,8 @@
 //
 
 #include "wcs_toolbox.h"
+#include <openssl/sha.h>
+
 using namespace qingzhen::wcs;
 utility::size64_t qingzhen::wcs::wcs_toolbox::read_buffer_from_stream(std::istream &input_stream, const std::streamsize &max_buffer_size,
                                                            char *buffer) {
@@ -24,10 +26,12 @@ utility::size64_t qingzhen::wcs::wcs_toolbox::read_block_and_hash_from_stream(st
         auto buffer_read_size = read_buffer_from_stream(input_stream, buffer_size,buffer);
         if (buffer_read_size <= 0) {
             //block read finished
+			delete[] buffer;
             break;
             // Hash
         }
         SHA1_Update(&shaCtx, buffer, buffer_read_size);
+		delete[] buffer;
         block_read += buffer_read_size;
     }
 
@@ -38,8 +42,9 @@ utility::size64_t qingzhen::wcs::wcs_toolbox::read_block_and_hash_from_stream(st
 utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility::size64_t &block_size, size_t &buffer_size) {
     utility::size64_t file_read = 0;
     std::vector<unsigned char> rec = std::vector<unsigned char>();
-    unsigned char temp_digest[SHA_DIGEST_LENGTH];
+    
     while (true){
+		unsigned char temp_digest[SHA_DIGEST_LENGTH];
         utility::size64_t currentRead = read_block_and_hash_from_stream(iss, block_size, buffer_size,temp_digest);
         if(currentRead <= 0){
             break;
@@ -63,7 +68,8 @@ utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility
         //Single file
     }else{
         //final_digest[0] = BYTE_OVER_4;
-        // unsigned char temp_digest[SHA_DIGEST_LENGTH];
+        unsigned char temp_digest[SHA_DIGEST_LENGTH];
+
         SHA_CTX sha_ctx;
         SHA1_Init(&sha_ctx);
         SHA1_Update(&sha_ctx, rec.data(), digestSize);

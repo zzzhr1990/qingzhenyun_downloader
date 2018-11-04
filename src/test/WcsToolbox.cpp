@@ -3,7 +3,7 @@
 //
 
 #include "WcsToolbox.h"
-
+#include <openssl/sha.h>
 utility::size64_t
 WcsToolbox::ReadBlockFromStream(std::istream &iss, const utility::size64_t &blockSize, size_t &bufferSize,
                                 unsigned char *tempDigest) {
