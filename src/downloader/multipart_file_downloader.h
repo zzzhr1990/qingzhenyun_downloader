@@ -7,14 +7,16 @@
 
 #include <pplx/pplxtasks.h>
 #include <cpprest/http_client.h>
+#include <chrono>
 
 struct download_part_info {
     utility::size64_t part_size;
     utility::size64_t part_start;
     utility::size64_t current_download_size;
     utility::size64_t download_size;
-    time_t last_download_time;
-    time_t start_time;
+    int64_t last_download_time;
+    //time_t start_time;
+    //std::chrono::time_point tp;
     utility::size64_t current_speed;
     bool is_last_block;
 };

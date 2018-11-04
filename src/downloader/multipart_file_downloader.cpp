@@ -53,7 +53,8 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
     config.set_chunksize(1024 * 4);
     http_client client(task_url, config);
     http_request msg(mtd);
-	pplx::cancellation_token_source main_token_source = token_source.create_linked_source(token_source.get_token());
+    pplx::cancellation_token t = token_source.get_token();
+    pplx::cancellation_token_source main_token_source = pplx::cancellation_token_source::create_linked_source(t);
     auto main_request = client.request(msg, main_token_source.get_token()).then([&](http_response response)-> void {
         //TODO: process 301/302
         if(response.status_code() == web::http::status_codes::OK){
@@ -215,30 +216,35 @@ bool multipart_file_downloader::multipart_down(utility::string_t &task_url, util
                     [&, i](message_direction::direction direction, utility::size64_t so_far) {
                         auto * part_detail_info = download_task->part_info->at(i);
                         auto need_size = part_detail_info->part_size;
-                        auto ts = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                        int64_t ts = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                        //auto ts = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                        /*
                         if(part_detail_info->start_time == 0){
                             part_detail_info->start_time = ts;
                         }
+                         */
                         part_detail_info->download_size = so_far;
                         auto progress = need_size > 0 ? part_detail_info->download_size * 100 / need_size : 0;
 						
                         // calc speed
                         auto time_diff = ts - part_detail_info->last_download_time;
-                        auto time_interval = 10;
+                        auto time_interval = 1000;
                         if(time_diff > time_interval){
                             auto size_diff = so_far - part_detail_info->current_download_size;
                             if(size_diff < 0){
                                 size_diff = 0;
                             }
-                            part_detail_info->current_speed = size_diff / time_diff;
+                            part_detail_info->current_speed = size_diff * 1000 / time_diff;
                             part_detail_info->current_download_size = so_far;
                             part_detail_info->last_download_time = ts;
-                        }else{
+                        }
+                        /* no need.
+                         * else{
                             auto start_diff = ts - part_detail_info->start_time;
                             if(start_diff > 0 && start_diff < time_interval){
                                 part_detail_info->current_speed = so_far / start_diff;
                             }
-                        }
+                        }*/
 
                         utility::stringstream_t string_stream;
 
