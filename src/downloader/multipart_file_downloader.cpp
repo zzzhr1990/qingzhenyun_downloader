@@ -26,6 +26,7 @@ bool multipart_file_downloader::create_new_task(utility::string_t &task_url,util
     // assume no data fetch first
 
 
+    return true;
     auto sp = boost::filesystem::path::preferred_separator;
     auto lastFlag = destination.find_last_of(sp);
 

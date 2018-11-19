@@ -16,22 +16,19 @@ utility::size64_t qingzhen::wcs::wcs_toolbox::read_buffer_from_stream(std::istre
 utility::size64_t qingzhen::wcs::wcs_toolbox::read_block_and_hash_from_stream(std::istream &input_stream,
                                                                               const utility::size64_t &block_size,
                                                                               size_t &buffer_size,
-                                                                              unsigned char *temp_digest) {
+                                                                              unsigned char *temp_digest, char *buffer) {
 
     SHA_CTX shaCtx;
     SHA1_Init(&shaCtx);
     utility::size64_t block_read = 0;
     while (block_read < block_size) {
-        char *buffer = new char[buffer_size];
         auto buffer_read_size = read_buffer_from_stream(input_stream, buffer_size,buffer);
         if (buffer_read_size <= 0) {
             //block read finished
-			delete[] buffer;
             break;
             // Hash
         }
         SHA1_Update(&shaCtx, buffer, buffer_read_size);
-		delete[] buffer;
         block_read += buffer_read_size;
     }
 
@@ -42,10 +39,10 @@ utility::size64_t qingzhen::wcs::wcs_toolbox::read_block_and_hash_from_stream(st
 utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility::size64_t &block_size, size_t &buffer_size) {
     utility::size64_t file_read = 0;
     std::vector<unsigned char> rec = std::vector<unsigned char>();
-    
+    unsigned char temp_digest[SHA_DIGEST_LENGTH];
+    char* buffer = new char[buffer_size];
     while (true){
-		unsigned char temp_digest[SHA_DIGEST_LENGTH];
-        utility::size64_t currentRead = read_block_and_hash_from_stream(iss, block_size, buffer_size,temp_digest);
+        utility::size64_t currentRead = read_block_and_hash_from_stream(iss, block_size, buffer_size,temp_digest, buffer);
         if(currentRead <= 0){
             break;
         }
@@ -53,9 +50,8 @@ utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility
             rec.push_back(c);
         }
         file_read += currentRead;
-
-        //ConvertSizeToDisplay(fileRead);
     }
+    delete[] buffer;
     const unsigned char BYTE_LOW_4 = 0x16;
     const unsigned char BYTE_OVER_4 = 0x96;
     size_t digestSize = rec.size();
@@ -68,7 +64,7 @@ utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility
         //Single file
     }else{
         //final_digest[0] = BYTE_OVER_4;
-        unsigned char temp_digest[SHA_DIGEST_LENGTH];
+        //unsigned char temp_digest[SHA_DIGEST_LENGTH];
 
         SHA_CTX sha_ctx;
         SHA1_Init(&sha_ctx);
@@ -85,12 +81,12 @@ utility::string_t wcs_toolbox::hash_file_stream(std::istream &iss, const utility
     //char * ch = base64.data();
 
     for (auto &i : base64) {
-        if (i == '+') {
-            i = '-';
+        if (i == _XPLATSTR('+')) {
+            i = _XPLATSTR('-');
         }
 
-        if (i == '/') {
-            i = '_';
+        if (i == _XPLATSTR('/')) {
+            i = _XPLATSTR('_');
         }
     }
     return base64;
