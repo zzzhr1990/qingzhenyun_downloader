@@ -9,7 +9,7 @@
 namespace qingzhen::download{
     class pplx_downloader {
     public:
-        static void download_file(const utility::string_t& url, pplx::cancellation_token token);
+        static void download_file(const utility::string_t& url, pplx::cancellation_token& token);
     };
 }
 
